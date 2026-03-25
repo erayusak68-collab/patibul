@@ -1,0 +1,1 @@
+// Dummy file to create the public directory for Vite dev server to function correctly in this environment.

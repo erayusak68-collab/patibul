@@ -1,0 +1,5 @@
+{
+  "name": "Petinder",
+  "description": "Sevimli dostlarımızı yeni yuvalarıyla buluşturan, modern ve eğlenceli bir sahiplendirme platformu.",
+  "requestFramePermissions": ["camera", "microphone"]
+}

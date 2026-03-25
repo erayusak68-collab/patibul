@@ -1,0 +1,195 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (from Auth)
+    // Fields:
+    //   - id: string (required)
+    //   - fullName: string (required)
+    //   - email: string (required)
+    //   - city: string (required)
+    //   - district: string (required)
+    //   - gender: string (required, enum: ["Kadın", "Erkek"])
+    //   - petType: string (required, enum: ["Kedi", "Köpek"])
+    //   - inviteCode: string (required)
+    //   - patiPuan: number (required)
+    //   - role: string (required, enum: ["admin", "user"])
+    //   - profilePhoto: string (optional)
+    //   - favorites: list (optional)
+    //   - matches: list (optional)
+    //
+    // Collection: pets
+    // Document ID: petId
+    // Fields:
+    //   - id: string (required)
+    //   - name: string (required)
+    //   - type: string (required, enum: ["Kedi", "Köpek"])
+    //   - breed: string (required)
+    //   - age: string (required)
+    //   - city: string (required)
+    //   - district: string (required)
+    //   - photos: list (required)
+    //   - description: string (required)
+    //   - vaccinationStatus: string (required)
+    //   - neuteredStatus: string (required)
+    //   - energyLevel: number (required)
+    //   - toiletTraining: bool (required)
+    //   - ownerId: string (required)
+    //   - ownerName: string (optional)
+    //   - ownerPhoto: string (optional)
+    //   - createdAt: string (required)
+    //   - isBoosted: bool (optional)
+    //   - boostedUntil: string (optional)
+    //
+    // Collection: conversations
+    // Document ID: conversationId
+    // Fields:
+    //   - id: string (required)
+    //   - participants: list (required)
+    //   - participantNames: map (optional)
+    //   - participantPhotos: map (optional)
+    //   - lastMessage: string (optional)
+    //   - lastTimestamp: string (optional)
+    //   - petId: string (optional)
+    //   - unreadCount: number (optional)
+    //
+    // Collection: conversations/{conversationId}/messages
+    // Document ID: messageId
+    // Fields:
+    //   - id: string (required)
+    //   - senderId: string (required)
+    //   - text: string (optional)
+    //   - timestamp: string (required)
+    //   - type: string (required, enum: ["text", "image", "audio"])
+    //   - dataUrl: string (optional)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "erayusak68@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isParticipant(participants) {
+      return isAuthenticated() && request.auth.uid in participants;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUser(data) {
+      return hasOnlyAllowedFields(['id', 'fullName', 'email', 'city', 'district', 'gender', 'petType', 'inviteCode', 'patiPuan', 'role', 'profilePhoto', 'favorites', 'matches']) &&
+             data.id is string &&
+             data.fullName is string && data.fullName.size() > 0 && data.fullName.size() < 100 &&
+             data.email is string && isValidEmail(data.email) &&
+             data.city is string &&
+             data.district is string &&
+             data.gender in ["Kadın", "Erkek", "Belirtilmedi"] &&
+             data.petType in ["Kedi", "Köpek"] &&
+             data.inviteCode is string &&
+             data.patiPuan is number &&
+             data.role in ["admin", "user"] &&
+             (!('profilePhoto' in data) || data.profilePhoto is string) &&
+             (!('favorites' in data) || data.favorites is list) &&
+             (!('matches' in data) || data.matches is list);
+    }
+
+    function isValidPet(data) {
+      return hasOnlyAllowedFields(['id', 'name', 'type', 'breed', 'age', 'city', 'district', 'photos', 'description', 'vaccinationStatus', 'neuteredStatus', 'energyLevel', 'toiletTraining', 'ownerId', 'ownerName', 'ownerPhoto', 'createdAt', 'isBoosted', 'boostedUntil']) &&
+             data.id is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 50 &&
+             data.type in ["Kedi", "Köpek"] &&
+             data.breed is string &&
+             data.age is string &&
+             data.city is string &&
+             data.district is string &&
+             data.photos is list && data.photos.size() > 0 && data.photos.size() <= 10 &&
+             data.description is string && data.description.size() < 2000 &&
+             data.ownerId is string &&
+             (!('ownerName' in data) || data.ownerName is string) &&
+             (!('ownerPhoto' in data) || data.ownerPhoto is string) &&
+             data.createdAt is string;
+    }
+
+    function isValidConversation(data) {
+      return data.id is string &&
+             data.participants is list && data.participants.size() >= 2 &&
+             (!('participantNames' in data) || data.participantNames is map) &&
+             (!('participantPhotos' in data) || data.participantPhotos is map);
+    }
+
+    function isValidMessage(data) {
+      return data.id is string &&
+             data.senderId is string &&
+             data.timestamp is string &&
+             data.type in ["text", "image", "audio"];
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if true; // Allow public profile viewing
+      allow create: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == 'user') || isAdmin();
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data) && request.resource.data.role == resource.data.role) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /pets/{petId} {
+      allow read: if true; // Allow public browsing
+      allow create: if isAuthenticated() && isValidPet(request.resource.data) && (request.resource.data.ownerId == request.auth.uid || isAdmin());
+      allow update: if isAuthenticated() && (
+        (resource.data.ownerId == request.auth.uid && 
+         isValidPet(request.resource.data) && 
+         request.resource.data.ownerId == resource.data.ownerId &&
+         request.resource.data.createdAt == resource.data.createdAt) ||
+        isAdmin() ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isBoosted', 'boostedUntil']))
+      );
+      allow delete: if isAuthenticated() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    match /conversations/{conversationId} {
+      allow read: if isParticipant(resource.data.participants) || isAdmin();
+      allow create: if isAuthenticated() && isValidConversation(request.resource.data) && request.auth.uid in request.resource.data.participants;
+      allow update: if (isParticipant(resource.data.participants) || isAdmin()) && isValidConversation(request.resource.data);
+      allow delete: if isAdmin();
+
+      match /messages/{messageId} {
+        allow read: if isParticipant(get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants) || isAdmin();
+        allow create: if isParticipant(get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants) && 
+                      isValidMessage(request.resource.data) && 
+                      request.resource.data.senderId == request.auth.uid;
+        allow update: if false;
+        allow delete: if isAdmin();
+      }
+    }
+  }
+}
